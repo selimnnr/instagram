@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.cobanov.instagram'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "dev.cobanov.instagram"
+        minSdk 24
+        targetSdk 34
+        versionCode 20501
+        versionName "2.5.1"
+    }
+
+    signingConfigs {
+        release {
+            // Uses standard debug keystore by default if no custom keystore env is set,
+            // so release APKs built in CI are always signed and ready to install on any phone.
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "${System.getProperty('user.home')}/.android/debug.keystore")
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias System.getenv("KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword System.getenv("KEY_PASSWORD") ?: "android"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            applicationIdSuffix ".debug"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+}

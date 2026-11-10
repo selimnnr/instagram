@@ -22,3 +22,12 @@ skills-lock.json
 
 # extension release zip, built by npm run pack
 .pack/
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.keystore
+
