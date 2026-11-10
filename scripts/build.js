@@ -42,6 +42,91 @@ const extensionScriptPath = path.join(extensionDir, "instagram-unfollower.js");
 fs.mkdirSync(extensionDir, { recursive: true });
 fs.writeFileSync(extensionScriptPath, output, "utf8");
 
+/* The Android app embeds the exact same one-line scanner script plus an
+   offline-bundled copy of export.html so the ZIP/JSON analyzer works with
+   zero network access and can hand its results straight to the live panel. */
+const androidAssetsDir = path.join(root, "android", "app", "src", "main", "assets");
+fs.mkdirSync(androidAssetsDir, { recursive: true });
+fs.writeFileSync(path.join(androidAssetsDir, "instagram-unfollower.js"), output, "utf8");
+
+const siteCss = fs.readFileSync(path.join(root, "assets", "site.css"), "utf8");
+const exportCss = fs.readFileSync(path.join(root, "assets", "export.css"), "utf8");
+const exportJs = fs.readFileSync(path.join(root, "assets", "export.js"), "utf8");
+const exportHtmlRaw = fs.readFileSync(path.join(root, "export.html"), "utf8");
+
+const androidExportCss = `
+${siteCss}
+${exportCss}
+.masthead, .colophon { display: none !important; }
+.export { padding-block: 20px 56px !important; }
+.btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--on-accent) !important;
+  font-weight: 600 !important;
+}
+`;
+
+const androidBridgeJs = `
+<script>
+(function () {
+  var unfollowBtn = document.querySelector("[data-unfollow-panel]");
+  if (unfollowBtn) {
+    unfollowBtn.addEventListener("click", function () {
+      if (!result || !result.notFollowingBack || !result.notFollowingBack.length) return;
+      window.__iuExportUsernames = result.notFollowingBack.map(function (a) { return a.username; }).join("\\n");
+      location.href = "app://unfollow-from-export";
+    });
+  }
+  var copyBtn = document.querySelector("[data-copy-list]");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", function () {
+      if (!result || !result.notFollowingBack) return;
+      window.__iuClipboardText = result.notFollowingBack.map(function (a) { return a.username; }).join("\\n");
+      location.href = "app://copy-clipboard";
+      resultsStatus.textContent = t("copied", { count: number(result.notFollowingBack.length) });
+    });
+  }
+  window.__setAndroidBusy = function (busy) {
+    setBusy(Boolean(busy));
+  };
+  window.__handleAndroidFiles = function (items) {
+    if (!Array.isArray(items) || !items.length) {
+      setBusy(false);
+      return;
+    }
+    var files = items.map(function (item) {
+      return {
+        path: item.path || "file.json",
+        blob: new Blob([item.text || ""], { type: item.type || "text/plain" })
+      };
+    });
+    handle(files);
+  };
+})();
+</script>
+`;
+
+const exportAppHtml = exportHtmlRaw
+  .replace(/<link\s+rel="preconnect"[^>]*>\s*/g, "")
+  .replace(/<link[\s\S]*?fonts\.googleapis\.com[\s\S]*?\/>\s*/g, "")
+  .replace(/<script[\s\S]*?oa-c\.cobanov\.run[\s\S]*?<\/script>\s*/g, "")
+  .replace(
+    /<link\s+rel="stylesheet"\s+href="assets\/site\.css[^"]*"\s*\/>\s*<link\s+rel="stylesheet"\s+href="assets\/export\.css"\s*\/>/,
+    () => `<style>\n${androidExportCss}\n</style>`
+  )
+  .replace(
+    '<button class="btn" type="button" data-copy-list>',
+    `<button class="btn btn-primary" type="button" data-unfollow-panel>\n              <span lang="en">Unfollow in panel</span><span lang="tr">Panelle takipten çık</span>\n            </button>\n            <button class="btn" type="button" data-copy-list>`
+  )
+  .replace(
+    '<script src="assets/export.js"></script>',
+    () => `<script>\n${exportJs}\n</script>`
+  )
+  .replace("</body>", () => `${androidBridgeJs}\n  </body>`);
+
+fs.writeFileSync(path.join(androidAssetsDir, "export-app.html"), exportAppHtml, "utf8");
+
 /* Printed so release notes can quote it; security.html hashes the served file itself. */
 const fileHash = crypto.createHash("sha256").update(output, "utf8").digest("hex");
 
@@ -96,6 +181,17 @@ if (manifestVersion !== entries[0].version) {
   throw new Error(
     `chrome-extension/manifest.json is ${manifestVersion} but changelog.json ships ${entries[0].version}`
   );
+}
+
+const androidGradlePath = path.join(root, "android", "app", "build.gradle");
+if (fs.existsSync(androidGradlePath)) {
+  const androidGradle = fs.readFileSync(androidGradlePath, "utf8");
+  const androidVersion = androidGradle.match(/versionName\s+"([^"]+)"/)?.[1];
+  if (androidVersion !== entries[0].version) {
+    throw new Error(
+      `android/app/build.gradle is ${androidVersion} but changelog.json ships ${entries[0].version}`
+    );
+  }
 }
 
 /* The sponsor wall is public-facing and hand-edited, so a bad handle would ship
